@@ -52,32 +52,60 @@ export async function POST(req: NextRequest) {
 
   const eventType = evt.type;
 
+  // if (eventType === 'user.created') {
+  //   const { id, email_addresses, first_name, last_name, username } = evt.data;
+  //   let githubUsername;
+  //   let name;
+  //   let email;
+  //   // let id;
+  //   const { userId } = await auth();
+  //   // if (userId) {
+  //   //   const client = await clerkClient();
+  //   //   const user = await client.users.getUser(userId);
+  //   //   githubUsername = user.username;
+  //   //   email = user.emailAddresses[0].emailAddress;
+  //   //   if (user.firstName && user.lastName) {
+  //   //     name = `${user.firstName} ${user.lastName}`;
+  //   //   } else if (user.firstName === null && user.lastName === null) {
+  //   //     name = user.username;
+  //   //   }
+  //   //   id = user.id;
+      
+  //   // }
+  //   await prisma.user.create({
+  //       data: {
+  //         clerkUserId: id,
+  //         email: email,
+  //         name: name,
+  //         githubUsername: githubUsername || '',
+  //       },
+  //     });
+  // }
   if (eventType === 'user.created') {
-    let githubUsername;
+    const { id, email_addresses, first_name, last_name } = evt.data;
+    let githubUsername = null;
     let name;
-    let email;
-    let id;
-    const { userId } = await auth();
-    if (userId) {
-      const client = await clerkClient();
-      const user = await client.users.getUser(userId);
-      githubUsername = user.username;
-      email = user.emailAddresses[0].emailAddress;
-      if (user.firstName && user.lastName) {
-        name = `${user.firstName} ${user.lastName}`;
-      } else if (user.firstName === null && user.lastName === null) {
-        name = user.username;
-      }
-      id = user.id;
+    if(first_name == 'null' && last_name == 'null') {
+            name = githubUsername;
+    }
+    else{
+      name = `${first_name} ${last_name}`.trim();
+    }    
+      const { userId } = await auth();
+      if (userId) {
+        const client = await clerkClient();
+        const user = await client.users.getUser(userId);
+        githubUsername = user.username;
+      }       
       await prisma.user.create({
         data: {
           clerkUserId: id,
-          email: email,
+          email: email_addresses[0]?.email_address,
+          
           name: name,
-          githubUsername: githubUsername || name || '',
+          githubUsername: githubUsername ?? '',
         },
-      });
-    }
+      });    
   }
 
   return new Response('', { status: 201 });
