@@ -1,6 +1,6 @@
 import { Webhook } from 'svix';
 import { headers } from 'next/headers';
-import { WebhookEvent } from '@clerk/nextjs/server';
+import { clerkClient, WebhookEvent, auth } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -51,32 +51,34 @@ export async function POST(req: NextRequest) {
   const eventType = evt.type;
 
   if (eventType === 'user.created') {
-    const { id, email_addresses, first_name, last_name, external_accounts } = evt.data;
+    const { id, email_addresses, first_name, last_name } = evt.data;
+    let githubUsername = null;
 
-    // Find the GitHub account from the external accounts
-    const githubAccount = external_accounts.find(acc => acc.provider === 'github');
-    const githubUsername = githubAccount?.username;
-
-    if (!githubUsername) {
-        console.error('GitHub username not found for user:', id);
-        // Depending on your app's logic, you might want to handle this differently.
-        // For now, we will return an error response.
-        return new NextResponse('GitHub username is required to create a user.', { status: 400 });
+    try {
+      const { userId } = await auth();
+      if (userId) {
+        const client = await clerkClient();
+        const user = await client.users.getUser(userId);
+        githubUsername = user?.username ?? null;
+      }
+    } catch (error) {
+      console.error('Error fetching user from Clerk API:', error);
+      return new Response('Error fetching user details', { status: 500 });
     }
 
     try {
       await prisma.user.create({
         data: {
           clerkUserId: id,
-          email: email_addresses[0].email_address,
-          name: `${first_name} ${last_name}`.trim(),
-          githubUsername: githubUsername,
+          email: email_addresses[0]?.email_address ?? '',
+          name: `${first_name ?? ''} ${last_name ?? ''}`.trim(),
+          githubUsername: githubUsername ?? '',
         },
       });
-      console.log(`User ${id} has been created.`);
+      console.log(`User ${id} with GitHub username ${githubUsername} has been created.`);
     } catch (error) {
       console.error('Error creating user in database:', error);
-      return new NextResponse('Error creating user', { status: 500 });
+      return new Response('Error creating user', { status: 500 });
     }
   }
 
