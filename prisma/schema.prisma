@@ -1,0 +1,62 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String         @id @default(uuid())
+  email          String         @unique
+  name           String?
+  githubUsername String         @unique
+  repositories   Repository[]
+  contributions  Contribution[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  clerkUserId     String?      @unique
+  contributionsLastTracked DateTime?
+  commitsLastTracked       DateTime?
+}
+
+model Repository {
+  id           Int      @id @default(autoincrement())
+  githubRepoId Int      @unique
+  name         String
+  fullName     String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  commits      Commit[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Commit {
+  id           Int        @id @default(autoincrement())
+  sha          String     @unique
+  message      String
+  authorName   String
+  authorDate   DateTime
+  htmlUrl      String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  repositoryId Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Contribution {
+  id        Int      @id @default(autoincrement())
+  date      DateTime
+  count     Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+}
