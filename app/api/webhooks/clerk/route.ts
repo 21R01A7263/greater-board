@@ -82,8 +82,8 @@ export async function POST(req: NextRequest) {
   //     });
   // }
   if (eventType === 'user.created') {
-    const { id, email_addresses, first_name, last_name } = evt.data;
-    let githubUsername = null;
+    const { id, email_addresses, first_name, last_name, username } = evt.data;
+    let githubUsername = username || '';
     let name;
     if(first_name == 'null' && last_name == 'null') {
             name = githubUsername;
@@ -91,16 +91,16 @@ export async function POST(req: NextRequest) {
     else{
       name = `${first_name} ${last_name}`.trim();
     }    
-      const { userId } = await auth();
-      if (userId) {
-        const client = await clerkClient();
-        const user = await client.users.getUser(userId);
-        githubUsername = user.username;
-      }       
+      // const { userId } = await auth();
+      // if (userId) {
+      //   const client = await clerkClient();
+      //   const user = await client.users.getUser(userId);
+      //   githubUsername = user.username;
+      // }       
       await prisma.user.create({
         data: {
           name: name,
-          githubUsername: githubUsername ?? '',
+          githubUsername,
           clerkUserId: id,
           email: email_addresses[0]?.email_address,         
         },
