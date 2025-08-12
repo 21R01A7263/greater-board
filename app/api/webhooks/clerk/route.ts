@@ -99,11 +99,10 @@ export async function POST(req: NextRequest) {
       }       
       await prisma.user.create({
         data: {
-          clerkUserId: id,
-          email: email_addresses[0]?.email_address,
-          
           name: name,
           githubUsername: githubUsername ?? '',
+          clerkUserId: id,
+          email: email_addresses[0]?.email_address,         
         },
       });    
   }
