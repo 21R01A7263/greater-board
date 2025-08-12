@@ -13,8 +13,8 @@ datasource db {
 model User {
   id             String         @id @default(uuid())
   email          String         @unique
-  name           String?
-  githubUsername String         @unique
+  name           String
+  githubUsername String         
   repositories   Repository[]
   contributions  Contribution[]
   createdAt      DateTime       @default(now())

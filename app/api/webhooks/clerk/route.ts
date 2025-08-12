@@ -83,28 +83,51 @@ export async function POST(req: NextRequest) {
   // }
   if (eventType === 'user.created') {
     const { id, email_addresses, first_name, last_name, username } = evt.data;
-    let githubUsername = username || '';
+    
+    // Ensure githubUsername is properly extracted and not null/undefined
+    const githubUsername = username || '';
+    
+    // Construct the display name
     let name;
-    if(first_name == 'null' && last_name == 'null') {
-            name = githubUsername;
+    if(!first_name && !last_name) {
+      // If no first/last name, use the GitHub username as the display name
+      name = githubUsername || 'Unknown User';
+    } else {
+      // Construct name from first and last name
+      name = `${first_name || ''} ${last_name || ''}`.trim();
     }
-    else{
-      name = `${first_name} ${last_name}`.trim();
-    }    
-      // const { userId } = await auth();
-      // if (userId) {
-      //   const client = await clerkClient();
-      //   const user = await client.users.getUser(userId);
-      //   githubUsername = user.username;
-      // }       
-      await prisma.user.create({
+    
+    // Ensure we have required fields before creating user
+    const email = email_addresses?.[0]?.email_address;
+    
+    if (!email) {
+      console.error('No email address found in webhook data');
+      return new Response('Missing email address', { status: 400 });
+    }
+    
+    try {
+      // Create user in Neon PostgreSQL database
+      const newUser = await prisma.user.create({
         data: {
-          name: name,
-          githubUsername,
           clerkUserId: id,
-          email: email_addresses[0]?.email_address,         
+          email: email,
+          name: name,
+          githubUsername: githubUsername, // This will be sent to Neon PostgreSQL
         },
-      });    
+      });
+      
+      console.log('User created successfully:', {
+        id: newUser.id,
+        clerkUserId: newUser.clerkUserId,
+        email: newUser.email,
+        name: newUser.name,
+        githubUsername: newUser.githubUsername, // Verify it was stored
+      });
+      
+    } catch (error) {
+      console.error('Error creating user in database:', error);
+      return new Response('Database error', { status: 500 });
+    }
   }
 
   return new Response('', { status: 201 });
