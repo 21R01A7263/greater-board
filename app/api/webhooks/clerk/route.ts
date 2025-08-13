@@ -4,10 +4,8 @@ import { clerkClient, WebhookEvent } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
-// Assuming getContributionData is moved to a separate utility file
-// For example: '@/lib/github.ts'
-// As a temporary measure, the function is copied here.
-// NOTE: It is highly recommended to move getContributionData to a separate file.
+// NOTE: It is recommended to move these utility functions to a shared file,
+// for example: '@/lib/github.ts'
 
 interface ContributionDay {
   contributionCount: number;
@@ -16,48 +14,22 @@ interface ContributionDay {
   color: string;
 }
 
-// Function to generate a date string in YYYY-MM-DD format
-function formatDateToISO(date: Date): string {
-  return date.toISOString().split('T')[0];
+interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
 }
 
-// Function to create a default contribution day
-function createDefaultDay(date: Date): ContributionDay {
-  return {
-    contributionCount: 0,
-    date: formatDateToISO(date),
-    weekday: date.getDay(),
-    color: '#fcfcfc', // GitHub's default color for 0 contributions
+interface GitHubCommit {
+  sha: string;
+  commit: {
+    author: { name: string; date: string };
+    message: string;
   };
+  html_url: string;
+  repository: GitHubRepo;
 }
 
-// Function to pad contribution data to ensure we have exactly 60 days
-function padContributionData(
-  contributionDays: ContributionDay[],
-  targetDays: number = 60
-): ContributionDay[] {
-  if (contributionDays.length >= targetDays) {
-    return contributionDays.slice(-targetDays);
-  }
-
-  const paddedData: ContributionDay[] = [];
-  const today = new Date();
-
-  // Calculate how many days we need to pad
-  const daysToAdd = targetDays - contributionDays.length;
-
-  // Add padding days at the beginning
-  for (let i = daysToAdd - 1; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (targetDays - 1) + (daysToAdd - 1 - i));
-    paddedData.push(createDefaultDay(date));
-  }
-
-  // Add the actual contribution data
-  paddedData.push(...contributionDays);
-
-  return paddedData;
-}
 async function getContributionData(
   token: string,
   from: string,
@@ -116,20 +88,62 @@ async function getContributionData(
     calendar.weeks.forEach((week: { contributionDays: ContributionDay[] }) => {
       allDays.push(...week.contributionDays);
     });
-    return padContributionData(allDays);
+    return allDays;
   } catch (error) {
     console.error('Error fetching contribution data:', error);
     return null;
   }
 }
 
+async function getCommitHistory(
+  token: string,
+  sinceISO: string,
+  username: string
+): Promise<GitHubCommit[] | null> {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'User-Agent': 'Nextjs-Clerk-Commit-Viewer',
+    Accept: 'application/vnd.github.v3+json',
+  };
+  try {
+    const searchQuery = `user:${username} pushed:>=${sinceISO}`;
+    const encodedQuery = encodeURIComponent(searchQuery);
+    const repoResponse = await fetch(
+      `https://api.github.com/search/repositories?q=${encodedQuery}&sort=updated&order=desc&per_page=100`,
+      { headers }
+    );
+    if (!repoResponse.ok) throw new Error('Failed to search repos');
+    const searchResult = await repoResponse.json();
+    const repos: GitHubRepo[] = searchResult.items;
+
+    const commitPromises = repos.map(async (repo) => {
+      const commitResponse = await fetch(
+        `https://api.github.com/repos/${repo.full_name}/commits?since=${sinceISO}&author=${username}`,
+        { headers }
+      );
+      if (!commitResponse.ok) return [];
+  const commits = (await commitResponse.json()) as GitHubCommit[];
+      return commits.map((c) => ({ ...c, repository: repo }));
+    });
+
+    const commitsByRepo = await Promise.all(commitPromises);
+    const allCommits = commitsByRepo.flat();
+    allCommits.sort(
+      (a, b) =>
+        new Date(b.commit.author.date).getTime() -
+        new Date(a.commit.author.date).getTime()
+    );
+    return allCommits;
+  } catch (error) {
+    console.error('Error fetching commit history:', error);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
-
   if (!WEBHOOK_SECRET) {
-    throw new Error(
-      'Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env or .env.local'
-    );
+    throw new Error('Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env');
   }
 
   const headerPayload = await headers();
@@ -138,16 +152,12 @@ export async function POST(req: NextRequest) {
   const svix_signature = headerPayload.get('svix-signature');
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response('Error occured -- no svix headers', {
-      status: 400,
-    });
+    return new Response('Error occured -- no svix headers', { status: 400 });
   }
 
   const payload = await req.json();
   const body = JSON.stringify(payload);
-
   const wh = new Webhook(WEBHOOK_SECRET);
-
   let evt: WebhookEvent;
 
   try {
@@ -158,30 +168,17 @@ export async function POST(req: NextRequest) {
     }) as WebhookEvent;
   } catch (err) {
     console.error('Error verifying webhook:', err);
-    return new Response('Error occured', {
-      status: 400,
-    });
+    return new Response('Error occured', { status: 400 });
   }
 
   const eventType = evt.type;
-
   if (eventType === 'user.created') {
-    const { id, email_addresses, first_name, last_name, username, image_url } =
-      evt.data;
-
+    const { id, email_addresses, first_name, last_name, username, image_url } = evt.data;
     const githubUsername = username || '';
-
-    let name;
-    if (!first_name && !last_name) {
-      name = githubUsername || 'Unknown User';
-    } else {
-      name = `${first_name || ''} ${last_name || ''}`.trim();
-    }
-    const avatarUrl = image_url;
+    const name = first_name && last_name ? `${first_name} ${last_name}`.trim() : githubUsername || 'Unknown User';
     const email = email_addresses?.[0]?.email_address;
 
     if (!email) {
-      console.error('No email address found in webhook data');
       return new Response('Missing email address', { status: 400 });
     }
 
@@ -192,51 +189,78 @@ export async function POST(req: NextRequest) {
           email: email,
           name: name,
           githubUsername: githubUsername,
-          avatarURL: avatarUrl,
+          avatarURL: image_url,
         },
       });
 
-      // New feature implementation: Fetch and store initial contribution data
-      try {
-        // Initialize Clerk client instance
-        const clerk = await clerkClient();
+      const clerk = await clerkClient();
         const clerkResponse = await clerk.users.getUserOauthAccessToken(
           id,
           'github'
         );
-        const githubToken = clerkResponse.data?.[0]?.token;
+      const githubToken = clerkResponse.data?.[0]?.token;
 
-        if (githubToken) {
-          const to = new Date();
-          const from = new Date();
-          from.setDate(to.getDate() - 60);
-          const contributionDays = await getContributionData(
-            githubToken,
-            from.toISOString(),
-            to.toISOString()
-          );
+      if (githubToken) {
+        // Initial Contribution Fetch
+        const to = new Date();
+        const fromContributions = new Date();
+        fromContributions.setDate(to.getDate() - 60);
+        const contributionDays = await getContributionData(githubToken, fromContributions.toISOString(), to.toISOString());
 
-          if (contributionDays) {
-            await prisma.contribution.createMany({
-              data: contributionDays.map((day) => ({
-                date: new Date(day.date),
-                count: day.contributionCount,
+        if (contributionDays) {
+          await prisma.contribution.createMany({
+            data: contributionDays.map((day) => ({
+              date: new Date(day.date),
+              count: day.contributionCount,
+              userId: newUser.id,
+            })),
+          });
+          await prisma.user.update({ where: { id: newUser.id }, data: { contributionsLastTracked: to } });
+        }
+
+        // Initial Commit History Fetch
+        const fromCommits = new Date();
+        fromCommits.setDate(fromCommits.getDate() - 60);
+        const commits = await getCommitHistory(githubToken, fromCommits.toISOString(), githubUsername);
+
+        if (commits && commits.length > 0) {
+          const lastCommitIDTracked = commits[0].sha;
+
+          for (const commit of commits) {
+            await prisma.repository.upsert({
+              where: { githubRepoId: commit.repository.id },
+              update: {},
+              create: {
+                githubRepoId: commit.repository.id,
+                name: commit.repository.name,
+                fullName: commit.repository.full_name,
                 userId: newUser.id,
-              })),
+              },
             });
 
-            await prisma.user.update({
-              where: { id: newUser.id },
-              data: { contributionsLastTracked: to },
+            await prisma.commit.create({
+              data: {
+                commit_id: commit.sha,
+                message: commit.commit.message,
+                authorName: commit.commit.author.name,
+                authorDate: new Date(commit.commit.author.date),
+                htmlUrl: commit.html_url,
+                repositoryId: commit.repository.id,
+              },
             });
           }
+
+          await prisma.user.update({
+            where: { id: newUser.id },
+            data: {
+              commitsLastTracked: new Date(),
+              lastCommitIDTracked: lastCommitIDTracked,
+            },
+          });
         }
-      } catch (error) {
-        console.error('Error fetching initial contribution data:', error);
-        // Do not block user creation if this fails
       }
     } catch (error) {
-      console.error('Error creating user in database:', error);
+      console.error('Error in user creation or initial data fetch:', error);
       return new Response('Database error', { status: 500 });
     }
   }

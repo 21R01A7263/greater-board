@@ -198,7 +198,7 @@ const ContributionGraph = async () => {
     }
 
     const to = new Date();
-    let from = new Date();
+  const from = new Date();
     from.setDate(to.getDate() - 60);
 
     const client = await clerkClient();
