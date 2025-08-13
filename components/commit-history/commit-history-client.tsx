@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 
-// Define the type for a single commit object
 interface GitHubCommit {
   sha: string;
   commit: {
@@ -15,7 +14,6 @@ interface GitHubCommit {
   html_url: string;
 }
 
-// The UI component that handles pagination state
 export default function CommitHistoryUI({
   commits,
 }: {
@@ -24,7 +22,6 @@ export default function CommitHistoryUI({
   const [currentPage, setCurrentPage] = useState(1);
   const commitsPerPage = 5;
 
-  // Pagination logic
   const indexOfLastCommit = currentPage * commitsPerPage;
   const indexOfFirstCommit = indexOfLastCommit - commitsPerPage;
   const currentCommits = commits.slice(indexOfFirstCommit, indexOfLastCommit);
@@ -105,7 +102,9 @@ export default function CommitHistoryUI({
           </div>
         </>
       ) : (
-        <p className='text-gray-500 dark:text-gray-400'>No commits found in the last 30 days.</p>
+        <p className='text-gray-500 dark:text-gray-400'>
+          No commits found in the last 30 days.
+        </p>
       )}
     </div>
   );
