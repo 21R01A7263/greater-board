@@ -103,7 +103,7 @@ export default function CommitHistoryUI({
         </>
       ) : (
         <p className='text-gray-500 dark:text-gray-400'>
-          No commits found in the last 30 days.
+          No commits found in the last 60 days.
         </p>
       )}
     </div>

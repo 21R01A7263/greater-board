@@ -11,18 +11,19 @@ datasource db {
 }
 
 model User {
-  id             String         @id @default(uuid())
-  email          String         @unique
-  name           String
-  githubUsername String         
-  repositories   Repository[]
-  contributions  Contribution[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  clerkUserId     String?      @unique
+  id                       String         @id @default(uuid())
+  email                    String         @unique
+  name                     String
+  githubUsername           String
+  repositories             Repository[]
+  contributions            Contribution[]
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  clerkUserId              String?        @unique
   contributionsLastTracked DateTime?
   commitsLastTracked       DateTime?
-  avatarURL       String?
+  lastCommitIDTracked          String?
+  avatarURL                String?
 }
 
 model Repository {
@@ -39,7 +40,7 @@ model Repository {
 
 model Commit {
   id           Int        @id @default(autoincrement())
-  sha          String     @unique
+  commit_id    String     @unique
   message      String
   authorName   String
   authorDate   DateTime
