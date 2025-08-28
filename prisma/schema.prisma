@@ -22,8 +22,6 @@ model User {
   clerkUserId              String?        @unique
   contributionsLastTracked DateTime?
   commitsLastTracked       DateTime?
-  lastCommitIDTracked          String?
-  avatarURL                String?
 }
 
 model Repository {

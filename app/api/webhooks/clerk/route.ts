@@ -141,25 +141,30 @@ async function getCommitHistory(
 }
 
 export async function POST(req: NextRequest) {
+  // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
   if (!WEBHOOK_SECRET) {
     throw new Error('Please add CLERK_WEBHOOK_SECRET from Clerk Dashboard to .env');
   }
 
+  // Get the headers
   const headerPayload = await headers();
   const svix_id = headerPayload.get('svix-id');
   const svix_timestamp = headerPayload.get('svix-timestamp');
   const svix_signature = headerPayload.get('svix-signature');
 
+  // If there are no headers, error out
   if (!svix_id || !svix_timestamp || !svix_signature) {
     return new Response('Error occured -- no svix headers', { status: 400 });
   }
 
+  // Get the body
   const payload = await req.json();
   const body = JSON.stringify(payload);
   const wh = new Webhook(WEBHOOK_SECRET);
   let evt: WebhookEvent;
 
+  // Verify the payload with the headers
   try {
     evt = wh.verify(body, {
       'svix-id': svix_id,
@@ -177,88 +182,30 @@ export async function POST(req: NextRequest) {
     const githubUsername = username || '';
     const name = first_name && last_name ? `${first_name} ${last_name}`.trim() : githubUsername || 'Unknown User';
     const email = email_addresses?.[0]?.email_address;
-
+    
     if (!email) {
       return new Response('Missing email address', { status: 400 });
     }
-
+    
     try {
+      // Create user in Neon PostgreSQL database
       const newUser = await prisma.user.create({
         data: {
           clerkUserId: id,
           email: email,
           name: name,
-          githubUsername: githubUsername,
-          avatarURL: image_url,
+          githubUsername: githubUsername, // This will be sent to Neon PostgreSQL
         },
       });
-
-      const clerk = await clerkClient();
-        const clerkResponse = await clerk.users.getUserOauthAccessToken(
-          id,
-          'github'
-        );
-      const githubToken = clerkResponse.data?.[0]?.token;
-
-      if (githubToken) {
-        // Initial Contribution Fetch
-        const to = new Date();
-        const fromContributions = new Date();
-        fromContributions.setDate(to.getDate() - 60);
-        const contributionDays = await getContributionData(githubToken, fromContributions.toISOString(), to.toISOString());
-
-        if (contributionDays) {
-          await prisma.contribution.createMany({
-            data: contributionDays.map((day) => ({
-              date: new Date(day.date),
-              count: day.contributionCount,
-              userId: newUser.id,
-            })),
-          });
-          await prisma.user.update({ where: { id: newUser.id }, data: { contributionsLastTracked: to } });
-        }
-
-        // Initial Commit History Fetch
-        const fromCommits = new Date();
-        fromCommits.setDate(fromCommits.getDate() - 60);
-        const commits = await getCommitHistory(githubToken, fromCommits.toISOString(), githubUsername);
-
-        if (commits && commits.length > 0) {
-          const lastCommitIDTracked = commits[0].sha;
-
-          for (const commit of commits) {
-            await prisma.repository.upsert({
-              where: { githubRepoId: commit.repository.id },
-              update: {},
-              create: {
-                githubRepoId: commit.repository.id,
-                name: commit.repository.name,
-                fullName: commit.repository.full_name,
-                userId: newUser.id,
-              },
-            });
-
-            await prisma.commit.create({
-              data: {
-                commit_id: commit.sha,
-                message: commit.commit.message,
-                authorName: commit.commit.author.name,
-                authorDate: new Date(commit.commit.author.date),
-                htmlUrl: commit.html_url,
-                repositoryId: commit.repository.id,
-              },
-            });
-          }
-
-          await prisma.user.update({
-            where: { id: newUser.id },
-            data: {
-              commitsLastTracked: new Date(),
-              lastCommitIDTracked: lastCommitIDTracked,
-            },
-          });
-        }
-      }
+      
+      console.log('User created successfully:', {
+        id: newUser.id,
+        clerkUserId: newUser.clerkUserId,
+        email: newUser.email,
+        name: newUser.name,
+        githubUsername: newUser.githubUsername, // Verify it was stored
+      });
+      
     } catch (error) {
       console.error('Error in user creation or initial data fetch:', error);
       return new Response('Database error', { status: 500 });

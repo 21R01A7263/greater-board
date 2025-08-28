@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+
+// Define the type for a single commit object
 interface GitHubCommit {
   sha: string;
   commit: {
@@ -12,7 +15,33 @@ interface GitHubCommit {
   html_url: string;
 }
 
-export default function CommitHistoryUI({ commits }: { commits: GitHubCommit[] }) {
+// The UI component that handles pagination state
+export default function CommitHistoryUI({
+  commits,
+}: {
+  commits: GitHubCommit[];
+}) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const commitsPerPage = 5;
+
+  // Pagination logic
+  const indexOfLastCommit = currentPage * commitsPerPage;
+  const indexOfFirstCommit = indexOfLastCommit - commitsPerPage;
+  const currentCommits = commits.slice(indexOfFirstCommit, indexOfLastCommit);
+  const totalPages = Math.ceil(commits.length / commitsPerPage);
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
   return (
     <div className='relative mx-auto w-full max-w-xl bg-white dark:bg-background dark:border-2 dark:border-gray-600 p-8 rounded-lg shadow-md mt-8'>
       <h2 className='text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-6 border-b dark:border-gray-600 pb-4'>
