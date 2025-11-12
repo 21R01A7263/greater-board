@@ -46,7 +46,7 @@
 
 ## Adjusting TTLs
 
-- Modify `revalidate` export in `commit-history.tsx` for server component regeneration cadence.
+- Modify `revalidate` export in `commit-history.tsx` for server component.
 - Adjust `revalidate` option in `unstable_cache` call within `getRecentCommitsFromDBCached` for per-query TTL.
 
 ## Edge Cases & Notes
