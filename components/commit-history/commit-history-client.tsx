@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import React from 'react';
 
+// Define the type for a single commit object
 interface GitHubCommit {
   sha: string;
   commit: {
@@ -15,6 +16,7 @@ interface GitHubCommit {
   html_url: string;
 }
 
+// The UI component that handles pagination state
 export default function CommitHistoryUI({
   commits,
 }: {
@@ -24,7 +26,7 @@ export default function CommitHistoryUI({
   const currentCommits = useMemo(() => commits.slice(0, 5), [commits]);
 
   return (
-    <div className=' relative mx-auto w-full max-w-xl bg-white dark:bg-background dark:border-2 dark:border-gray-600 p-8 rounded-lg shadow-md mt-8'>
+    <div className='relative mx-auto w-full max-w-xl bg-white dark:bg-background dark:border-2 dark:border-gray-600 p-8 rounded-lg shadow-md mt-8'>
       <h2 className='text-2xl font-semibold text-gray-700 dark:text-gray-200 mb-6 border-b dark:border-gray-600 pb-4'>
         Latest Commits
       </h2>

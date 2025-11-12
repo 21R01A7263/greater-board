@@ -6,6 +6,8 @@ export default async function Avatar() {
   const { userId } = await auth();
 
   if (!userId) {
+    // This case should ideally be handled by the middleware,
+    // but it's a good practice for robustness.
     return (
       <div className='p-8'>
         <p>You must be signed in to view this page.</p>
@@ -23,6 +25,7 @@ export default async function Avatar() {
 
   // Avoid console.log in server component to keep output clean and deterministic for hydration.
   return (
+    // Add flex and items-end here
     <div>
       <div className='max-h-54 w-full bg-gray-700' />
       {/* Use unoptimized to bypass Next.js image pipeline which was failing to decode AVIF; provide graceful fallback */}

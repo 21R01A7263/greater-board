@@ -64,7 +64,7 @@ model Repository {
 
 model Commit {
   id           Int        @id @default(autoincrement())
-  sha          String     @unique
+  commit_id    String     @unique
   message      String
   authorName   String
   authorDate   DateTime
