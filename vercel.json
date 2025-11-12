@@ -1,0 +1,24 @@
+{
+  "crons": [
+    {
+      "path": "/api/reconcile-repos",
+      "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/purge-commits",
+      "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/scores/daily/recompute",
+      "schedule": "1 0 * * *"
+    },
+    {
+      "path": "/api/cron/leaderboard-snapshots",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/active-leaderboard",
+      "schedule": "*/2 * * * *"
+    }
+  ]
+}

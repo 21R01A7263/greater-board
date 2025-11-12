@@ -11,30 +11,55 @@ datasource db {
 }
 
 model User {
-  id             String         @id @default(uuid())
-  email          String         @unique
-  name           String
-  githubUsername String         
-  repositories   Repository[]
-  contributions  Contribution[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  clerkUserId     String?      @unique
-  contributionsLastTracked DateTime?
-  commitsLastTracked       DateTime?
-  avatarURL       String?
+  id                          String                   @id @default(uuid())
+  email                       String                   @unique
+  name                        String
+  githubUsername              String
+  repositories                Repository[]
+  contributions               Contribution[]
+  createdAt                   DateTime                 @default(now())
+  updatedAt                   DateTime                 @updatedAt
+  clerkUserId                 String?                  @unique
+  contributionsLastTracked    DateTime?
+  commitsLastTracked          DateTime?
+  avatarURL                   String?
+  timezone                    String? // IANA timezone (e.g., "America/Los_Angeles"); falls back to UTC
+  // Cached streaks to avoid recomputation on every request
+  currentStreak               Int                      @default(0)
+  longestStreak               Int                      @default(0)
+  lastActiveDate              DateTime?
+  aggregatesLastSyncedAt      DateTime?
+  achievementsLastEvaluatedAt DateTime?
+  achievements                UserAchievement[]
+  repoDailyContribs           RepoDailyContribution[]
+  timeBuckets                 ContributionTimeBucket[]
+  // Leaderboard/score relations
+  dailyScores                 UserDailyScore[]
+  userScore                   UserScore?
+  userDayCommitAggregates     UserDayCommitAggregate[]
 }
 
 model Repository {
-  id           Int      @id @default(autoincrement())
-  githubRepoId Int      @unique
-  name         String
-  fullName     String   @unique
-  user         User     @relation(fields: [userId], references: [id])
-  userId       String
-  commits      Commit[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            Int       @id @default(autoincrement())
+  githubRepoId  Int       @unique
+  name          String
+  fullName      String    @unique
+  // Repository state flags to handle renames/privatization/deletions
+  isPrivate     Boolean   @default(false)
+  isArchived    Boolean   @default(false)
+  isDisabled    Boolean   @default(false)
+  isUnavailable Boolean   @default(false)
+  lastCheckedAt DateTime?
+  // ETags for conditional requests to GitHub
+  repoEtag      String?
+  commitsEtag   String?
+  user          User      @relation(fields: [userId], references: [id])
+  userId        String
+  commits       Commit[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Commit {
@@ -46,8 +71,14 @@ model Commit {
   htmlUrl      String
   repository   Repository @relation(fields: [repositoryId], references: [id])
   repositoryId Int
+  // Denormalized for fast lookups without join
+  userId       String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  @@index([authorDate])
+  @@index([repositoryId, authorDate])
+  @@index([userId, authorDate])
 }
 
 model Contribution {
@@ -60,4 +91,122 @@ model Contribution {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
+}
+
+// Per-day per-repository contribution counts (commits) for advanced achievements
+model RepoDailyContribution {
+  id           Int      @id @default(autoincrement())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  date         DateTime
+  githubRepoId Int
+  repoFullName String
+  isPrivate    Boolean  @default(false)
+  count        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, date, githubRepoId])
+  @@index([userId, date])
+}
+
+// Per-day time-of-day contribution buckets for Early Bird / Night Owl
+model ContributionTimeBucket {
+  id           Int      @id @default(autoincrement())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  date         DateTime
+  morningCount Int      @default(0) // 05:00–10:59 local time
+  eveningCount Int      @default(0) // 20:00–23:59 local time
+  totalCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// Catalog of possible achievements
+model Achievement {
+  id          Int               @id @default(autoincrement())
+  key         String            @unique
+  name        String
+  description String?
+  category    String?
+  tier        Int               @default(1)
+  icon        String?
+  isHidden    Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  awards      UserAchievement[]
+}
+
+// Link table: which user earned which achievement and when
+model UserAchievement {
+  id            Int         @id @default(autoincrement())
+  user          User        @relation(fields: [userId], references: [id])
+  userId        String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  achievementId Int
+  earnedAt      DateTime    @default(now())
+  meta          Json?
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// Rolling score for a user used by leaderboards (starts at 700)
+model UserScore {
+  userId    String   @id
+  current   Int      @default(700)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// Per-day scoring deltas and breakdown
+model UserDailyScore {
+  id           Int      @id @default(autoincrement())
+  date         DateTime
+  userId       String
+  gain         Int
+  loss         Int
+  net          Int
+  streakLength Int      @default(0)
+  breakdown    Json
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([userId, date])
+}
+
+// Materialized leaderboard snapshots for fast pagination
+model LeaderboardSnapshot {
+  id            Int      @id @default(autoincrement())
+  period        String // 'weekly' | 'monthly'
+  referenceDate DateTime // Week ending (UTC) or month ending
+  data          Json // Array of { userId, score, rank }
+  generatedAt   DateTime @default(now())
+
+  @@index([period, referenceDate])
+}
+
+// Aggregate, per-user per-day commit metadata derived during sync.
+// Enables scoring/achievements without storing unlimited commit rows.
+model UserDayCommitAggregate {
+  id              Int      @id @default(autoincrement())
+  userId          String
+  date            DateTime
+  total           Int      @default(0) // total commits that day across repos (from RepoDailyContribution)
+  shortMsgs       Int      @default(0) // commits with message length < 5
+  conventional    Int      @default(0) // commits with conventional prefix
+  fixRefactorTest Int      @default(0) // commits starting with fix:/refactor:/test:
+  uniqueMessages  Int      @default(0) // unique normalized messages count
+  hoursJson       Json? // { hours: number[] } UTC hours present
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([date])
 }

@@ -1,8 +1,10 @@
-// src/app/dashboard/commit-history.tsx
+// Commit History server component
 
-export const revalidate = 3600; // Revalidate every 60 seconds
+export const revalidate = 120; // Revalidate every 2 minutes
 import { auth, clerkClient } from '@clerk/nextjs/server';
-import CommitHistoryUI from './commit-history-client'; // Import the new client component
+import CommitHistoryUI from './commit-history-client'; // Import the client component
+import { needsCommitSync, syncRecentCommits, getRecentCommitsFromDBCached } from '@/lib/github-commits';
+import prisma from '@/lib/prisma';
 
 // Define interfaces for type safety
 interface GitHubRepo {
@@ -21,68 +23,7 @@ interface GitHubCommit {
   html_url: string;
 }
 
-async function getCommitHistory(
-  token: string,
-  username: string
-): Promise<GitHubCommit[] | null> {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'User-Agent': 'Nextjs-Clerk-Commit-Viewer',
-    Accept: 'application/vnd.github.v3+json',
-  };
-
-  try {
-
-    const sinceDate = new Date();
-    sinceDate.setDate(sinceDate.getDate() - 30);
-    const sinceISO = sinceDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-
-    const searchQuery = `user:${username} pushed:>=${sinceISO}`;
-    const encodedQuery = encodeURIComponent(searchQuery);
-
-    const repoResponse = await fetch(
-      `https://api.github.com/search/repositories?q=${encodedQuery}&sort=updated&order=desc&per_page=100`,
-      { headers }
-    );
-    // console.log('Repo Response:', repoResponse);
-    if (!repoResponse.ok) {
-      throw new Error(
-        `Failed to search repositories. Status: ${repoResponse.status}`
-      );
-    }
-
-    const searchResult = await repoResponse.json();
-    const repos: GitHubRepo[] = searchResult.items;
-
-    const commitPromises = repos.map(async (repo) => {
-      const commitResponse = await fetch(
-        `https://api.github.com/repos/${repo.full_name}/commits?since=${sinceISO}`,
-        { headers }
-      );
-      if (!commitResponse.ok) {
-        console.error(
-          `Failed to fetch commits for ${repo.full_name}. Status: ${commitResponse.status}`
-        );
-        return [];
-      }
-      return commitResponse.json() as Promise<GitHubCommit[]>;
-    });
-
-    const commitsByRepo = await Promise.all(commitPromises);
-
-    const allCommits = commitsByRepo.flat();
-    allCommits.sort(
-      (a, b) =>
-        new Date(b.commit.author.date).getTime() -
-        new Date(a.commit.author.date).getTime()
-    );
-
-    return allCommits;
-  } catch (error) {
-    console.error('Error fetching commit history:', error);
-    return null;
-  }
-}
+// Legacy direct GitHub fetch removed; now using DB-backed caching via prisma.
 
 // Server Component: Fetches data and passes it to the client component
 const CommitHistory = async () => {
@@ -131,21 +72,45 @@ const githubUsername =
     );
   }
 
-  const commits = await getCommitHistory(githubToken, githubUsername);
-
-  if (commits === null) {
-    return (
-      <div className="w-full max-w-4xl bg-white p-8 rounded-lg shadow-md mt-8">
-        <h2 className="text-2xl font-semibold text-gray-700 mb-6 border-b pb-4">
-          Commit History (Last 30 Days)
-        </h2>
-        <p className="text-red-500">Could not load commit history.</p>
-      </div>
-    );
+  // Ensure there is a corresponding DB user row (for FK relations) even if webhooks are not configured in dev
+  try {
+    const email = (user?.emailAddresses?.[0]?.emailAddress as string | undefined) || '';
+    const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || (user?.username as string | undefined) || 'Unknown User';
+    const avatarURL = (user?.imageUrl as string | undefined) || undefined;
+    if (email) {
+      await prisma.user.upsert({
+        where: { clerkUserId: userId },
+        update: { email, name, githubUsername, avatarURL },
+        create: { email, name, githubUsername, avatarURL, clerkUserId: userId },
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to ensure DB user exists:', e);
   }
 
-  // Render the client component and pass the fetched commits as a prop
-  return <CommitHistoryUI commits={commits} />;
+  // Sync if stale
+  try {
+    const stale = await needsCommitSync(userId);
+    if (stale) {
+      await syncRecentCommits({ userId, githubUsername, token: githubToken });
+    }
+  } catch (e) {
+    console.error('Commit sync failed', e);
+  }
+
+  // Fetch only the latest 5 commits (helper internally caps to 5)
+  const commits = await getRecentCommitsFromDBCached(userId, 30, 5, 0);
+  const shaped: GitHubCommit[] = commits.map(c => {
+    const dateVal: any = c.authorDate;
+    const iso = (dateVal instanceof Date) ? dateVal.toISOString() : (typeof dateVal === 'string' ? dateVal : new Date(dateVal).toISOString());
+    return {
+      sha: c.sha,
+      commit: { author: { name: c.authorName, date: iso }, message: c.message },
+      html_url: c.htmlUrl,
+    };
+  });
+
+  return <CommitHistoryUI commits={shaped} />;
 };
 
 export default CommitHistory;

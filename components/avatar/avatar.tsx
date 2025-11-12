@@ -1,5 +1,4 @@
 import Image from 'next/image';
-import React from 'react';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { checkRole } from '@/utils/roles';
 
@@ -22,17 +21,24 @@ export default async function Avatar() {
   const displayName = fullName || user.username || 'User';
   const handle = user.username ? `@${user.username}` : '';
 
-  console.log(userImage, fullName, displayName, handle);
+  // Avoid console.log in server component to keep output clean and deterministic for hydration.
   return (
     <div>
       <div className='max-h-54 w-full bg-gray-700' />
-      <Image
-        src='/background.avif'
-        alt='background'
-        width={1640}
-        height={664}
-        className='w-full h-54 object-cover'
-      />
+      {/* Use unoptimized to bypass Next.js image pipeline which was failing to decode AVIF; provide graceful fallback */}
+      <picture>
+        <source srcSet='/background.avif' type='image/avif' />
+        {/* Optional fallback if AVIF unsupported */}
+        <source srcSet='/background.avif' type='image/*' />
+        <Image
+          src='/background.avif'
+          alt='background'
+          width={1640}
+          height={664}
+          priority
+          className='w-full h-54 object-cover'
+        />
+      </picture>
 
       <div className='border-t-4 px-24'>
         <div className='relative flex items-end justify-between space-x-3'>
