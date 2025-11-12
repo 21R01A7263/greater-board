@@ -7,6 +7,11 @@ const isPublicRoute = createRouteMatcher([
   // Allow cron target routes to authenticate using CRON_SECRET header instead of Clerk session
   '/api/reconcile-repos',
   '/api/purge-commits',
+  // Newly allowlisted cron/admin endpoints guarded by CRON_SECRET
+  '/api/leaderboard',
+  '/api/scores/daily/recompute',
+  '/api/cron/leaderboard-snapshots',
+  '/api/cron/active-leaderboard',
 ])
 
 export default clerkMiddleware(async (auth, req) => {
