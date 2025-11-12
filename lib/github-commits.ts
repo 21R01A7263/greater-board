@@ -304,7 +304,7 @@ export async function syncRecentCommits(params: { userId: string; githubUsername
       const repoId = repoIdByGhId.get(c.repositoryId);
       if (!repoId) return null;
       return {
-        sha: c.sha,
+        commit_id: c.sha,
         message: c.message,
         authorName: c.authorName,
         authorDate: new Date(c.authorDate),
@@ -314,7 +314,7 @@ export async function syncRecentCommits(params: { userId: string; githubUsername
       };
     })
     .filter(Boolean) as Array<{
-      sha: string;
+      commit_id: string;
       message: string;
       authorName: string;
       authorDate: Date;
@@ -357,14 +357,21 @@ export async function getRecentCommitsFromDB(userId: string, days = 30, limit = 
   // Opportunistic purge (non-blocking). Avoids accumulating stale rows if sync hasn't run recently.
   purgeOldCommits(COMMIT_RETENTION_DAYS).catch(err => console.debug('opportunistic purge failed (ignored)', err));
   const take = Math.min(5, limit ?? 5);
-  return (prisma.commit as any).findMany({
+  const rows = await (prisma.commit as any).findMany({
     where: { userId: dbUser.id, authorDate: { gte: since }, repository: { isUnavailable: false } },
     orderBy: { authorDate: 'desc' },
     skip: 0, // always first page for UI
     take,
     // Only select fields used by UI layer to reduce payload
-    select: { sha: true, message: true, authorName: true, authorDate: true, htmlUrl: true },
+    select: { commit_id: true, message: true, authorName: true, authorDate: true, htmlUrl: true },
   });
+  return (rows as Array<{ commit_id: string; message: string; authorName: string; authorDate: Date; htmlUrl: string; }>).map(r => ({
+    sha: r.commit_id,
+    message: r.message,
+    authorName: r.authorName,
+    authorDate: r.authorDate,
+    htmlUrl: r.htmlUrl,
+  }));
 }
 
 // Cached variant; builds a cache key from params and attaches a user-specific tag so sync can invalidate.

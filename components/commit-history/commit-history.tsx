@@ -28,7 +28,7 @@ const CommitHistory = async () => {
   const { userId } = await auth();
   if (!userId) return null;
 
-  const user = await prisma.user.findUnique({
+  const dbUser = await prisma.user.findUnique({
     where: { clerkUserId: userId },
     include: {
       repositories: {
@@ -43,7 +43,7 @@ const CommitHistory = async () => {
     },
   });
 
-  if (!user) {
+  if (!dbUser) {
     return <div>User not found in database.</div>;
   }
 
@@ -53,7 +53,7 @@ const CommitHistory = async () => {
     'github'
   );
   const githubToken = clerkResponse.data?.[0]?.token;
-  const githubUsername = user.githubUsername;
+  const githubUsername = dbUser.githubUsername;
 
   if (!githubToken || !githubUsername) {
     return (
@@ -71,9 +71,11 @@ const CommitHistory = async () => {
 
   // Ensure there is a corresponding DB user row (for FK relations) even if webhooks are not configured in dev
   try {
-    const email = (user?.emailAddresses?.[0]?.emailAddress as string | undefined) || '';
-    const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || (user?.username as string | undefined) || 'Unknown User';
-    const avatarURL = (user?.imageUrl as string | undefined) || undefined;
+    // Fetch the Clerk user for profile details (email/name/avatar)
+    const clerkUser = await client.users.getUser(userId);
+    const email = (clerkUser?.emailAddresses?.[0]?.emailAddress as string | undefined) || '';
+    const name = [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ') || (clerkUser?.username as string | undefined) || 'Unknown User';
+    const avatarURL = (clerkUser?.imageUrl as string | undefined) || undefined;
     if (email) {
       await prisma.user.upsert({
         where: { clerkUserId: userId },
