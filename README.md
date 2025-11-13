@@ -4,15 +4,6 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 The application syncs your recent GitHub commits (per repository) and stores them in the `Commit` table via Prisma. To prevent unbounded growth of this table, a retention policy automatically purges commits older than a configured number of days (default: 30).
 
-### Configuration
-
-Set an environment variable in your `.env` file:
-
-```
-COMMIT_RETENTION_DAYS=30
-```
-
-If omitted or invalid, the system falls back to 30 days.
 
 ### How It Works
 
